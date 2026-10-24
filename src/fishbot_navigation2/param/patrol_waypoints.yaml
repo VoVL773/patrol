@@ -1,0 +1,17 @@
+# 巡检路线（航点由地图自动挑选：每个点周围 0.7m 内全是空闲，保证可通行）
+# 换路线只改这个文件，不用改代码
+patrol:
+  frame_id: map
+  loop: true
+  pause_at_waypoint: 3.0
+  voice: true
+  photo: true
+  # 相机话题不在这里配：它由 launch 参数说了算，保证桥接和巡检脚本用的是同一个名字
+  #   ros2 launch fishbot_navigation2 patrol_sim.launch.py camera_topic:=/camera/image_raw
+  waypoints:
+    # ★ 1 号点位故意离出生点 (0,0) 有 1.5m：太近的话 Nav2 会觉得"原地没进展"，
+    #   反复报 Failed to make progress，在目标边上磨几十秒才承认到达
+    - {name: "1号点位-大厅中部", x: 1.5, y: 0.1, yaw: 0.0}
+    - {name: "2号点位-左上房间", x: -3.3, y: 1.8, yaw: 0.0}
+    - {name: "3号点位-左下房间", x: -4.0, y: -2.1, yaw: 0.0}
+    - {name: "4号点位-右下房间", x: 3.2, y: -2.1, yaw: 0.0}

@@ -1,0 +1,42 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+    <xacro:include filename="common_inertia.xacro"/>
+
+    <xacro:macro name="base_xacro" params="length radius">
+
+        <!-- ① 导航用的"贴地虚拟根"：Nav2 要求机器人有一个 z=0 的根坐标系 -->
+        <link name="base_footprint"/>
+
+        <!-- ② 车身本体 -->
+        <link name="base_link">
+            <visual>
+                <origin xyz="0 0 0" rpy="0 0 0"/>
+                <geometry>
+                    <cylinder radius="${radius}" length="${length}"/>
+                </geometry>
+                <material name="white">
+                    <color rgba="1.0 1.0 1.0 0.8"/>
+                </material>
+            </visual>
+
+            <!-- 仿真必须有 collision，否则会直接穿过地面 -->
+            <collision>
+                <origin xyz="0 0 0" rpy="0 0 0"/>
+                <geometry>
+                    <cylinder radius="${radius}" length="${length}"/>
+                </geometry>
+            </collision>
+
+            <!-- 仿真必须有 inertial，否则物理引擎会警告并给个乱猜的质量 -->
+            <xacro:cylinder_inertia m="1.0" r="${radius}" h="${length}"/>
+        </link>
+
+        <joint name="base_joint" type="fixed">
+            <parent link="base_footprint"/>
+            <child link="base_link"/>
+            <!-- 车身抬高到 ${length/2 + 0.01}，让轮子刚好着地 -->
+            <origin xyz="0 0 ${length/2 + 0.01}" rpy="0 0 0"/>
+        </joint>
+
+    </xacro:macro>
+</robot>

@@ -1,0 +1,42 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+    <xacro:include filename="../common_inertia.xacro"/>
+
+    <!-- ⚠️ 注意是 params，不是 parame（原草稿里拼错了，xacro 会直接报错） -->
+    <xacro:macro name="camera_xacro" params="xyz">
+        <link name="camera_link">
+            <visual>
+                <origin xyz="0 0 0" rpy="0 0 0"/>
+                <geometry>
+                    <box size="0.02 0.10 0.02"/>
+                </geometry>
+                <material name="green">
+                    <color rgba="0.0 1.0 0.0 0.8"/>
+                </material>
+            </visual>
+            <collision>
+                <origin xyz="0 0 0" rpy="0 0 0"/>
+                <geometry>
+                    <box size="0.02 0.10 0.02"/>
+                </geometry>
+            </collision>
+            <xacro:box_inertia m="0.01" x="0.02" y="0.10" z="0.02"/>
+        </link>
+
+        <joint name="camera_joint" type="fixed">
+            <origin xyz="${xyz}"/>
+            <parent link="base_link"/>
+            <child link="camera_link"/>
+        </joint>
+
+        <!-- 光学坐标系：ROS 约定相机是"z 向前、x 向右、y 向下"，
+             而 URDF 里 link 是"x 向前"。这个 rpy 就是那两次旋转。 -->
+        <link name="camera_optical_link"/>
+
+        <joint name="camera_optical_joint" type="fixed">
+            <origin xyz="0 0 0" rpy="-1.5708 0 -1.5708"/>
+            <parent link="camera_link"/>
+            <child link="camera_optical_link"/>
+        </joint>
+    </xacro:macro>
+</robot>

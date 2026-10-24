@@ -1,0 +1,12 @@
+build/
+
+log/
+
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# 巡检运行时产物（CSV 日志 / 照片默认写到 ~/patrol_log，这里兜底）
+patrol_log/

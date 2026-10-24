@@ -1,0 +1,1 @@
+rclpy;geometry_msgs;sensor_msgs;nav2_msgs;nav2_simple_commander;nav2_bringup;ros_gz_bridge;python3-numpy;python3-pil;ament_lint_auto;ament_lint_common

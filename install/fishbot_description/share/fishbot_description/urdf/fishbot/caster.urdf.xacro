@@ -1,0 +1,39 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+    <xacro:include filename="common_inertia.xacro"/>
+
+    <xacro:macro name="caster_xacro" params="xyz">
+        <link name="caster_link">
+            <visual>
+                <origin xyz="0 0 0" rpy="0 0 0"/>
+                <geometry>
+                    <sphere radius="0.01"/>
+                </geometry>
+                <material name="yellow">
+                    <color rgba="1.0 1.0 0.0 1.0"/>
+                </material>
+            </visual>
+            <collision>
+                <origin xyz="0 0 0" rpy="0 0 0"/>
+                <geometry>
+                    <sphere radius="0.01"/>
+                </geometry>
+            </collision>
+            <xacro:sphere_inertia m="0.01" r="0.01"/>
+        </link>
+
+        <joint name="caster_joint" type="fixed">
+            <origin xyz="${xyz}"/>
+            <parent link="base_link"/>
+            <child link="caster_link"/>
+        </joint>
+
+        <!-- 万向轮摩擦必须为 0：有摩擦就会和主动轮"别着"，机器人走不直 -->
+        <gazebo reference="caster_link">
+            <mu1 value="0.0"/>
+            <mu2 value="0.0"/>
+            <kp value="1000000000.0"/>
+            <kd value="1.0"/>
+        </gazebo>
+    </xacro:macro>
+</robot>

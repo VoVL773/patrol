@@ -1,0 +1,39 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="fishbot">
+
+    <!-- ========== 引入各个部件 ========== -->
+    <xacro:include filename="base.urdf.xacro"/>
+    <xacro:include filename="wheel.urdf.xacro"/>
+    <xacro:include filename="caster.urdf.xacro"/>
+    <xacro:include filename="sensor/imu.urdf.xacro"/>
+    <xacro:include filename="sensor/laser.urdf.xacro"/>
+    <xacro:include filename="sensor/camera.urdf.xacro"/>
+    <xacro:include filename="plugins/gazebo_control_plugin.xacro"/>
+    <xacro:include filename="plugins/gazebo_sensor_plugin.xacro"/>
+
+    <!-- ========== 参数（要改尺寸就改这里）========== -->
+    <xacro:property name="base_length" value="0.12"/>
+    <xacro:property name="base_radius" value="0.10"/>
+    <xacro:property name="wheel_sep"   value="0.20"/>
+
+    <!-- ========== 装配 ========== -->
+    <xacro:base_xacro length="${base_length}" radius="${base_radius}"/>
+
+    <!-- 左右驱动轮：y 方向各偏 ±轮距/2，z 让轮心落在 0.032（= 轮半径，刚好着地）
+         车身中心在 z = base_length/2 + 0.01 = 0.07，所以相对车身是 0.032 - 0.07 = -0.038 -->
+    <xacro:wheel_xacro wheel_name="left"  xyz="0  ${wheel_sep/2} -0.038"/>
+    <xacro:wheel_xacro wheel_name="right" xyz="0 -${wheel_sep/2} -0.038"/>
+
+    <!-- 万向轮：放在车头前方，球心离地 0.01 -->
+    <xacro:caster_xacro xyz="0.08 0 -0.06"/>
+
+    <!-- 传感器 -->
+    <xacro:imu_xacro    xyz="0 0 0.02"/>
+    <xacro:laser_xacro  xyz="0 0 0.10"/>
+    <xacro:camera_xacro xyz="0.10 0 0.075"/>
+
+    <!-- ========== 仿真插件 ========== -->
+    <xacro:gazebo_control_plugin/>
+    <xacro:gazebo_sensor_plugin/>
+
+</robot>

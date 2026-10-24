@@ -1,0 +1,133 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+    <xacro:macro name="gazebo_sensor_plugin">
+
+        <!-- ============ ① 激光雷达 ============ -->
+        <gazebo reference="laser_link">
+            <sensor name="laser_sensor" type="gpu_lidar">
+                <!-- ★ 不指定的话 frame_id 会是 fishbot/base_footprint/laser_sensor，
+                     和 URDF 里的 laser_link 对不上，RViz 里 LaserScan 会一直报错 -->
+                <gz_frame_id>laser_link</gz_frame_id>
+                <!-- 这个 <topic> 决定 gz 话题名：写 scan 就是 /scan -->
+                <topic>scan</topic>
+                <always_on>1</always_on>
+                <visualize>true</visualize>
+                <update_rate>10</update_rate>
+                <lidar>
+                    <scan>
+                        <horizontal>
+                            <samples>360</samples>
+                            <resolution>1.0</resolution>
+                            <min_angle>0.0</min_angle>
+                            <max_angle>6.283185</max_angle>
+                        </horizontal>
+                    </scan>
+                    <range>
+                        <min>0.12</min>
+                        <!-- 两堵墙间距 6m，3.5m 量程在中间会丢墙；
+                             与 slam_toolbox 的 max_laser_range(20m) 对齐 -->
+                        <max>20</max>
+                        <resolution>0.015</resolution>
+                    </range>
+                    <noise>
+                        <type>gaussian</type>
+                        <mean>0.0</mean>
+                        <stddev>0.01</stddev>
+                    </noise>
+                </lidar>
+            </sensor>
+        </gazebo>
+
+        <!-- ============ ② IMU ============ -->
+        <gazebo reference="imu_link">
+            <sensor name="imu_sensor" type="imu">
+                <gz_frame_id>imu_link</gz_frame_id>
+                <topic>imu</topic>
+                <always_on>1</always_on>
+                <update_rate>100</update_rate>
+                <visualize>true</visualize>
+                <imu>
+                    <angular_velocity>
+                        <x><noise type="gaussian">
+                            <mean>0.0</mean><stddev>2e-4</stddev>
+                            <bias_mean>0.0000075</bias_mean><bias_stddev>0.0000008</bias_stddev>
+                        </noise></x>
+                        <y><noise type="gaussian">
+                            <mean>0.0</mean><stddev>2e-4</stddev>
+                            <bias_mean>0.0000075</bias_mean><bias_stddev>0.0000008</bias_stddev>
+                        </noise></y>
+                        <z><noise type="gaussian">
+                            <mean>0.0</mean><stddev>2e-4</stddev>
+                            <bias_mean>0.0000075</bias_mean><bias_stddev>0.0000008</bias_stddev>
+                        </noise></z>
+                    </angular_velocity>
+                    <linear_acceleration>
+                        <x><noise type="gaussian">
+                            <mean>0.0</mean><stddev>1.7e-2</stddev>
+                            <bias_mean>0.1</bias_mean><bias_stddev>0.001</bias_stddev>
+                        </noise></x>
+                        <y><noise type="gaussian">
+                            <mean>0.0</mean><stddev>1.7e-2</stddev>
+                            <bias_mean>0.1</bias_mean><bias_stddev>0.001</bias_stddev>
+                        </noise></y>
+                        <z><noise type="gaussian">
+                            <mean>0.0</mean><stddev>1.7e-2</stddev>
+                            <bias_mean>0.1</bias_mean><bias_stddev>0.001</bias_stddev>
+                        </noise></z>
+                    </linear_acceleration>
+                </imu>
+            </sensor>
+        </gazebo>
+
+        <!-- ============ ③ 深度相机 ============ -->
+        <gazebo reference="camera_link">
+            <sensor name="camera_sensor" type="depth_camera">
+                <gz_frame_id>camera_link</gz_frame_id>
+                <topic>camera</topic>
+                <always_on>1</always_on>
+                <visualize>true</visualize>
+                <update_rate>30</update_rate>
+                <camera>
+                    <horizontal_fov>1.204</horizontal_fov>
+                    <image>
+                        <width>640</width>
+                        <height>480</height>
+                        <format>R8G8B8</format>
+                    </image>
+                    <clip>
+                        <near>0.02</near>
+                        <far>8</far>
+                    </clip>
+                </camera>
+            </sensor>
+
+            <!-- ★ 彩色相机：和上面那个深度相机共用 camera_link（真实相机也常这么堆叠）
+                 为什么必须再加一个？
+                 Gazebo Harmonic 的 depth_camera 只在 <topic> 上发「深度图」
+                 （ROS 侧编码 32FC1）和点云 /camera/points，它根本不产生彩色图。
+                 而巡检要的"拍照"是能看的照片，所以这里补一个普通 camera 传感器，
+                 话题叫 camera_rgb，桥接到 ROS 的 /camera/image_raw。
+                 两个 sensor 名不能重名，所以叫 rgb_camera_sensor。 -->
+            <sensor name="rgb_camera_sensor" type="camera">
+                <gz_frame_id>camera_link</gz_frame_id>
+                <topic>camera_rgb</topic>
+                <always_on>1</always_on>
+                <visualize>true</visualize>
+                <update_rate>15</update_rate>
+                <camera>
+                    <horizontal_fov>1.204</horizontal_fov>
+                    <image>
+                        <width>640</width>
+                        <height>480</height>
+                        <format>R8G8B8</format>
+                    </image>
+                    <clip>
+                        <near>0.02</near>
+                        <far>30</far>
+                    </clip>
+                </camera>
+            </sensor>
+        </gazebo>
+
+    </xacro:macro>
+</robot>
