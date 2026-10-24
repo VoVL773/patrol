@@ -19,7 +19,7 @@ from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 
 
-def generate_launch_description():
+def generate_launch_description() -> LaunchDescription:
     nav2_bringup = get_package_share_directory('nav2_bringup')
     my_pkg = get_package_share_directory('fishbot_navigation2')
 

@@ -19,16 +19,25 @@
     1) 各房间采样点是否落在空闲区
     2) 从出生点(0,0)做洪泛填充，报告能否走到每个房间（门洞没被堵死）
 """
+from __future__ import annotations
+
 import math
 import pathlib
 import sys
 import xml.etree.ElementTree as ET
 from collections import deque
+from collections.abc import Sequence
+from os import PathLike
+
+BoundingBox = tuple[float, float, float, float]
+Cell = tuple[int, int]
+Point = tuple[float, float]
+
 
 FREE, OCC, UNK = 254, 0, 205
 
 # 户型里各房间的内部采样点（世界坐标），用于验证连通性
-ROOM_PROBES = {
+ROOM_PROBES: dict[str, Point] = {
     '左上房间': (-3.0, 1.8),
     '左下房间': (-4.0, -2.0),
     '右下房间': (2.5, -2.0),
@@ -36,10 +45,10 @@ ROOM_PROBES = {
 }
 
 
-def parse_obstacles(sdf_path):
+def parse_obstacles(sdf_path: str | PathLike[str]) -> list[BoundingBox]:
     """从 SDF 里抽出所有静态障碍物的世界坐标包围盒 [(x0,y0,x1,y1), ...]（跳过地面 plane）。"""
     root = ET.parse(sdf_path).getroot()
-    boxes = []
+    boxes: list[BoundingBox] = []
     for model in root.iter('model'):
         pose_el = model.find('pose')
         px = py = yaw = 0.0
@@ -77,7 +86,9 @@ def parse_obstacles(sdf_path):
     return boxes
 
 
-def render(boxes, res, margin):
+def render(
+    boxes: Sequence[BoundingBox], res: float, margin: float,
+) -> tuple[list[int], int, int, float, float]:
     """渲染成占据栅格。返回 (data, width, height, origin_x, origin_y)。"""
     xs = [b[0] for b in boxes] + [b[2] for b in boxes]
     ys = [b[1] for b in boxes] + [b[3] for b in boxes]
@@ -89,7 +100,7 @@ def render(boxes, res, margin):
     height = int(round((y1 - y0) / res))
     data = [UNK] * (width * height)
 
-    def cell_of(x, y):
+    def cell_of(x: float, y: float) -> Cell:
         return int((x - x0) / res), int((y - y0) / res)
 
     # ① 先标记障碍（所有墙和家具的包围盒）
@@ -120,7 +131,10 @@ def render(boxes, res, margin):
     return data, width, height, x0, y0
 
 
-def flood_fill(data, width, height, origin_x, origin_y, res, seed):
+def flood_fill(
+    data: Sequence[int], width: int, height: int,
+    origin_x: float, origin_y: float, res: float, seed: Point,
+) -> set[Cell]:
     """从 seed 世界坐标做洪泛，返回可达的空闲格集合。"""
     c = int((seed[0] - origin_x) / res)
     r = int((seed[1] - origin_y) / res)
@@ -139,7 +153,9 @@ def flood_fill(data, width, height, origin_x, origin_y, res, seed):
     return seen
 
 
-def write_pgm(path, data, width, height):
+def write_pgm(
+    path: str | PathLike[str], data: Sequence[int], width: int, height: int,
+) -> None:
     """PGM(P5)：第一行对应世界 y 最大处，所以行要倒序写。"""
     with open(path, 'wb') as fh:
         fh.write(b'P5\n%d %d\n255\n' % (width, height))
@@ -147,7 +163,7 @@ def write_pgm(path, data, width, height):
             fh.write(bytes(data[r * width:(r + 1) * width]))
 
 
-def main():
+def main() -> int:
     if len(sys.argv) < 3:
         print(__doc__)
         return 1

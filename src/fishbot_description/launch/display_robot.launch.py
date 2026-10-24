@@ -7,7 +7,7 @@ from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 
 
-def generate_launch_description():
+def generate_launch_description() -> LaunchDescription:
     pkg_share = get_package_share_directory('fishbot_description')
     xacro_file = os.path.join(pkg_share, 'urdf', 'fishbot', 'fishbot.urdf.xacro')
 

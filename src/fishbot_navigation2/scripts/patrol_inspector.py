@@ -19,6 +19,8 @@
     ros2 run fishbot_navigation2 patrol_inspector --ros-args -p loop:=false
 """
 
+from __future__ import annotations
+
 import csv
 import math
 import os
@@ -26,11 +28,13 @@ import subprocess
 import sys
 import time
 from datetime import datetime
+from typing import TYPE_CHECKING, NotRequired, TypedDict, TypeVar
 
 import numpy as np
 import rclpy
 import yaml
 from ament_index_python.packages import get_package_share_directory
+from builtin_interfaces.msg import Time
 from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped, Twist
 from lifecycle_msgs.srv import GetState
 from nav2_simple_commander.robot_navigator import BasicNavigator, TaskResult
@@ -39,16 +43,36 @@ from rclpy.qos import (QoSDurabilityPolicy, QoSHistoryPolicy, QoSProfile,
 from sensor_msgs.msg import Image
 
 
+if TYPE_CHECKING:
+    from numpy.typing import NDArray
+
+
+class Waypoint(TypedDict):
+    """航点配置：x、y 必填，name、yaw 可省略。"""
+
+    x: float
+    y: float
+    name: NotRequired[str]
+    yaw: NotRequired[float]
+
+
+ImagePath = TypeVar(
+    'ImagePath', str, os.PathLike[str],
+)
+
+
 # ======================================================================
 #  一、几个纯函数（不碰 ROS，方便单独测试）
 # ======================================================================
 
-def yaw_to_quaternion(yaw):
+def yaw_to_quaternion(yaw: float) -> tuple[float, float]:
     """偏航角(弧度) → 四元数的 (z, w)。因为 roll=pitch=0，只用这两个分量。"""
     return math.sin(yaw / 2.0), math.cos(yaw / 2.0)
 
 
-def make_pose(frame_id, x, y, yaw, stamp):
+def make_pose(
+    frame_id: str, x: float, y: float, yaw: float, stamp: Time,
+) -> PoseStamped:
     """拼一个 PoseStamped：Nav2 的目标点就是这种消息。"""
     pose = PoseStamped()
     pose.header.frame_id = frame_id          # 必须在 map 系里，Nav2 才知道你说的是哪儿
@@ -62,7 +86,7 @@ def make_pose(frame_id, x, y, yaw, stamp):
     return pose
 
 
-def sanitize(name):
+def sanitize(name: str) -> str:
     """点位名 → 能当文件名用的字符串（中文保留，空格和斜杠换掉）。"""
     out = []
     for ch in str(name):
@@ -70,7 +94,7 @@ def sanitize(name):
     return ''.join(out).strip('_') or 'waypoint'
 
 
-def image_msg_to_array(msg):
+def image_msg_to_array(msg: Image) -> NDArray[np.uint8] | NDArray[np.float32]:
     """sensor_msgs/Image → numpy 数组。
 
     这里刻意不用 cv_bridge：它要额外装包，而且我们只要存图，
@@ -99,7 +123,7 @@ def image_msg_to_array(msg):
     return rows.reshape(msg.height, msg.width, channels)
 
 
-def save_image_msg(msg, path):
+def save_image_msg(msg: Image, path: ImagePath) -> ImagePath:
     """把一帧 Image 存成 PNG 文件，返回 path。"""
     from PIL import Image as PILImage   # 放函数里 import：没装 PIL 也不影响巡逻本身
 
@@ -129,7 +153,7 @@ class PatrolInspector(BasicNavigator):
     """继承 BasicNavigator：它已经帮我们建好了 NavigateToPose 的 action client，
     还有 goToPose() / isTaskComplete() / cancelTask() 这些现成方法。"""
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__(node_name='patrol_inspector')
 
         # ---------------- 参数（launch 里会传，命令行也能覆盖） ----------------
@@ -153,10 +177,10 @@ class PatrolInspector(BasicNavigator):
             cfg = yaml.safe_load(f) or {}
         patrol = cfg.get('patrol', cfg)          # 兼容"有没有外面那层 patrol:"两种写法
 
-        self.route = patrol.get('waypoints') or []
+        self.route: list[Waypoint] = patrol.get('waypoints') or []
         if not self.route:
             raise RuntimeError('航点文件里一个 waypoints 都没有：%s' % wp_file)
-        self.frame_id = patrol.get('frame_id', 'map')
+        self.frame_id: str = patrol.get('frame_id', 'map')
         self.loop = bool(patrol.get('loop', True))
         self.pause = float(patrol.get('pause_at_waypoint', 3.0))
         self.voice = bool(patrol.get('voice', True))
@@ -189,7 +213,7 @@ class PatrolInspector(BasicNavigator):
         self.csv_file.flush()
 
         # ---------------- 相机：只留最新一帧 ----------------
-        self._img = None
+        self._img: Image | None = None
         self._img_seq = 0
         self._img_warned = False
         self._voice_warned = False
@@ -200,7 +224,7 @@ class PatrolInspector(BasicNavigator):
                        reliability=QoSReliabilityPolicy.BEST_EFFORT))
 
         # ---------------- 当前位置（AMCL 给的）：判断"是不是已经在点位旁边了" ----------------
-        self._pose = None
+        self._pose: tuple[float, float] | None = None
         self.create_subscription(
             PoseWithCovarianceStamped, 'amcl_pose', self._on_amcl_pose,
             QoSProfile(depth=1, durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
@@ -212,14 +236,14 @@ class PatrolInspector(BasicNavigator):
     # ------------------------------------------------------------------
     #  相机 / 语音 小工具
     # ------------------------------------------------------------------
-    def _on_amcl_pose(self, msg):
+    def _on_amcl_pose(self, msg: PoseWithCovarianceStamped) -> None:
         self._pose = (msg.pose.pose.position.x, msg.pose.pose.position.y)
 
-    def _on_image(self, msg):
+    def _on_image(self, msg: Image) -> None:
         self._img = msg
         self._img_seq += 1
 
-    def speak(self, text):
+    def speak(self, text: str) -> None:
         """调 espeak-ng 说话。用 Popen 不等待，所以不会卡住导航。"""
         if not self.voice:
             return
@@ -231,7 +255,7 @@ class PatrolInspector(BasicNavigator):
                 self._voice_warned = True
                 self.get_logger().warn('没装 espeak-ng，语音播报关掉（sudo apt install espeak-ng）')
 
-    def take_photo(self, index, name):
+    def take_photo(self, index: int, name: str) -> str:
         """等到一帧"新"图像并存盘，返回文件路径；拿不到就返回空字符串。"""
         seq_before = self._img_seq
         deadline = time.time() + self.photo_timeout
@@ -261,14 +285,14 @@ class PatrolInspector(BasicNavigator):
             self.get_logger().error('存图失败：%s: %s' % (type(exc).__name__, exc))
             return ''
 
-    def stop_robot(self):
+    def stop_robot(self) -> None:
         """连发几帧零速度，确保底盘真的停住。"""
         zero = Twist()
         for _ in range(10):
             self._cmd_pub.publish(zero)
             time.sleep(0.05)
 
-    def rest(self, seconds):
+    def rest(self, seconds: float) -> None:
         """停留 N 秒，但期间继续 spin（不然 /amcl_pose、TF 会断掉）。"""
         end = time.time() + float(seconds)
         while time.time() < end:
@@ -277,7 +301,7 @@ class PatrolInspector(BasicNavigator):
     # ------------------------------------------------------------------
     #  等 Nav2 / 走一个点位
     # ------------------------------------------------------------------
-    def wait_for_nav2(self):
+    def wait_for_nav2(self) -> None:
         """分两步等：先等 NavigateToPose 动作服务器，再等 AMCL 出定位。
 
         为什么不用官方的 waitUntilNav2Active()？
@@ -349,7 +373,7 @@ class PatrolInspector(BasicNavigator):
         except Exception as exc:
             self.get_logger().warn('清代价地图失败（不影响继续）：%s' % exc)
 
-    def visit_waypoint(self, index, wp):
+    def visit_waypoint(self, index: int, wp: Waypoint) -> TaskResult:
         name = str(wp.get('name', '点位%d' % index))
         x, y = float(wp['x']), float(wp['y'])
         yaw = float(wp.get('yaw', 0.0))
@@ -417,7 +441,10 @@ class PatrolInspector(BasicNavigator):
         self.write_csv(index, name, x, y, yaw, result.name, cost, photo)
         return result
 
-    def write_csv(self, index, name, x, y, yaw, result, cost, photo):
+    def write_csv(
+        self, index: int, name: str, x: float, y: float, yaw: float,
+        result: str, cost: float, photo: str,
+    ) -> None:
         self.csv.writerow([index, datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                            name, '%.3f' % x, '%.3f' % y, '%.3f' % yaw,
                            result, '%.1f' % cost, photo])
@@ -426,7 +453,7 @@ class PatrolInspector(BasicNavigator):
     # ------------------------------------------------------------------
     #  主流程
     # ------------------------------------------------------------------
-    def run(self):
+    def run(self) -> None:
         self.get_logger().info('巡检路线（来自 %s）：'
                                % self.get_parameter('waypoints_file').value)
         for i, wp in enumerate(self.route, start=1):
@@ -460,7 +487,7 @@ class PatrolInspector(BasicNavigator):
                 break
         self.get_logger().info('巡检结束')
 
-    def shutdown(self):
+    def shutdown(self) -> None:
         """收尾：取消目标 → 停车 → 关 CSV → 销毁节点。"""
         try:
             self.cancelTask()
@@ -478,9 +505,9 @@ class PatrolInspector(BasicNavigator):
             pass
 
 
-def main(args=None):
+def main(args: list[str] | None = None) -> None:
     rclpy.init(args=args)
-    node = None
+    node: PatrolInspector | None = None
     try:
         node = PatrolInspector()
         node.run()

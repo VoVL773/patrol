@@ -20,8 +20,12 @@
 
 依赖：/map、/scan、/odom、TF(map → base_footprint)
 """
+from __future__ import annotations
+
 import math
 import time
+from collections.abc import Sequence
+
 
 import rclpy
 from geometry_msgs.msg import Twist
@@ -30,6 +34,10 @@ from rclpy.node import Node
 from rclpy.time import Time
 from sensor_msgs.msg import LaserScan
 from tf2_ros import Buffer, TransformListener
+
+Point = tuple[float, float]
+Frontier = tuple[float, float, int]
+
 
 # ===== 调参区 =====
 CONTROL_HZ = 10.0            # 控制频率
@@ -58,14 +66,17 @@ EMPTY_FRONTIER_ROUNDS = 15   # 连续这么多轮找不到边界就宣布探索�
 
 
 # ===== 纯函数区（不依赖 ROS，便于单独测试）=====
-def find_frontiers(data, width, height, origin_x, origin_y, resolution,
-                   stride=2, min_unknown_neighbors=1):
+def find_frontiers(
+    data: Sequence[int], width: int, height: int,
+    origin_x: float, origin_y: float, resolution: float,
+    stride: int = 2, min_unknown_neighbors: int = 1,
+) -> list[Frontier]:
     """找出所有「空闲格且紧邻未知格」的格子。
 
     data: OccupancyGrid.data（0=空闲, 100=障碍, -1=未知）
     返回 [(x, y, 未知邻居个数), ...]，世界坐标。
     """
-    out = []
+    out: list[Frontier] = []
     for r in range(1, height - 1, stride):
         base = r * width
         for c in range(1, width - 1, stride):
@@ -88,8 +99,11 @@ def find_frontiers(data, width, height, origin_x, origin_y, resolution,
     return out
 
 
-def has_line_of_sight(data, width, height, origin_x, origin_y, resolution,
-                      x0, y0, x1, y1, step=LOS_STEP):
+def has_line_of_sight(
+    data: Sequence[int], width: int, height: int,
+    origin_x: float, origin_y: float, resolution: float,
+    x0: float, y0: float, x1: float, y1: float, step: float = LOS_STEP,
+) -> bool:
     """从 (x0,y0) 到 (x1,y1) 的直线是否不穿过障碍格（用来排除"墙后面的目标"）。"""
     dist = math.hypot(x1 - x0, y1 - y0)
     n = max(1, int(dist / step))
@@ -105,9 +119,11 @@ def has_line_of_sight(data, width, height, origin_x, origin_y, resolution,
     return True
 
 
-def cluster_frontiers(frontiers, radius=CLUSTER_RADIUS):
+def cluster_frontiers(
+    frontiers: Sequence[Frontier], radius: float = CLUSTER_RADIUS,
+) -> list[list[Frontier]]:
     """把相邻的边界点聚成簇（贪心），返回 [[(x,y,unknown), ...], ...]。"""
-    clusters = []
+    clusters: list[list[Frontier]] = []
     for p in frontiers:
         for cl in clusters:
             if any(abs(p[0] - q[0]) <= radius and abs(p[1] - q[1]) <= radius for q in cl):
@@ -118,10 +134,13 @@ def cluster_frontiers(frontiers, radius=CLUSTER_RADIUS):
     return clusters
 
 
-def pick_goal(frontiers, robot_x, robot_y, blacklist, data, width, height,
-              origin_x, origin_y, resolution,
-              min_dist=MIN_GOAL_DIST, max_dist=MAX_GOAL_DIST,
-              blacklist_radius=BLACKLIST_RADIUS, require_los=True):
+def pick_goal(
+    frontiers: Sequence[Frontier], robot_x: float, robot_y: float,
+    blacklist: Sequence[Point], data: Sequence[int], width: int, height: int,
+    origin_x: float, origin_y: float, resolution: float,
+    min_dist: float = MIN_GOAL_DIST, max_dist: float = MAX_GOAL_DIST,
+    blacklist_radius: float = BLACKLIST_RADIUS, require_los: bool = True,
+) -> Point | None:
     """挑"最近的、有视线、没被拉黑"的边界簇。
 
     返回该簇的代表点：有视线时给**簇心**（朝未知区域里推），否则退化给簇内最近点。
@@ -156,7 +175,7 @@ def pick_goal(frontiers, robot_x, robot_y, blacklist, data, width, height,
     return (nearest[0], nearest[1])
 
 
-def normalize_angle(a):
+def normalize_angle(a: float) -> float:
     """把角度折到 [-pi, pi]，避免跨 ±π 时绕远路掉头。"""
     while a > math.pi:
         a -= 2.0 * math.pi
@@ -167,7 +186,7 @@ def normalize_angle(a):
 
 class FrontierExplorer(Node):
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__('auto_explore')
         self.cmd_pub = self.create_publisher(Twist, 'cmd_vel', 10)
         self.create_subscription(OccupancyGrid, 'map', self.on_map, 1)
@@ -177,18 +196,18 @@ class FrontierExplorer(Node):
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
 
-        self.grid = None             # OccupancyGrid
-        self.ranges = None
+        self.grid: OccupancyGrid | None = None
+        self.ranges: Sequence[float] | None = None
         self.angle_min = 0.0
         self.angle_inc = 0.0
         self.actual_vx = 0.0
-        self.pose = None             # map 系下 (x, y, yaw)
+        self.pose: tuple[float, float, float] | None = None  # map 系下 (x, y, yaw)
 
-        self.goal = None
+        self.goal: Point | None = None
         self.goal_since = 0.0
-        self.blacklist = []          # 试过的目标点（世界坐标）
+        self.blacklist: list[Point] = []          # 试过的目标点（世界坐标）
         self.empty_rounds = 0
-        self.stuck_since = None
+        self.stuck_since: float | None = None
         self.back_until = 0.0
         self.turn_dir = 1
         self.start_time = time.monotonic()
@@ -199,23 +218,23 @@ class FrontierExplorer(Node):
         self.get_logger().info('auto_explore（frontier 版）已启动：先看图，再朝"未知区域"走')
 
     # ---------- 回调 ----------
-    def on_map(self, msg):
+    def on_map(self, msg: OccupancyGrid) -> None:
         self.grid = msg
 
-    def on_scan(self, msg):
+    def on_scan(self, msg: LaserScan) -> None:
         self.ranges = msg.ranges
         self.angle_min = msg.angle_min
         self.angle_inc = msg.angle_increment
 
-    def on_odom(self, msg):
+    def on_odom(self, msg: Odometry) -> None:
         self.actual_vx = msg.twist.twist.linear.x
 
     # ---------- 工具 ----------
-    def _idx_at(self, deg):
+    def _idx_at(self, deg: float) -> int:
         a = math.radians(deg) % (2.0 * math.pi)
         return int((a - self.angle_min) / self.angle_inc) % len(self.ranges)
 
-    def _sector_min(self, lo_deg, hi_deg):
+    def _sector_min(self, lo_deg: float, hi_deg: float) -> float:
         """取 [lo, hi] 扇区内的最近距离（度，逆时针为正，支持跨 0°）。"""
         best = float('inf')
         i = self._idx_at(lo_deg)
@@ -232,7 +251,7 @@ class FrontierExplorer(Node):
             steps += 1
         return best
 
-    def _update_pose(self):
+    def _update_pose(self) -> bool:
         """从 TF 取 map → base_footprint 的位姿（SLAM 会维护这条变换）。"""
         try:
             tf = self.tf_buffer.lookup_transform('map', 'base_footprint', Time())
@@ -245,10 +264,10 @@ class FrontierExplorer(Node):
         self.pose = (t.x, t.y, yaw)
         return True
 
-    def _stop(self):
+    def _stop(self) -> None:
         self.cmd_pub.publish(Twist())
 
-    def finish(self, why):
+    def finish(self, why: str) -> None:
         self.done = True
         self._stop()
         self.get_logger().info('=' * 56)
@@ -260,7 +279,7 @@ class FrontierExplorer(Node):
         self.get_logger().info('=' * 56)
 
     # ---------- 选目标 ----------
-    def replan(self):
+    def replan(self) -> None:
         if self.done or self.grid is None or not self._update_pose():
             return
         info = self.grid.info
@@ -296,7 +315,7 @@ class FrontierExplorer(Node):
             f'(边界点 {len(frontiers)} 个，已拉黑 {len(self.blacklist)} 个)')
 
     # ---------- 主控制 ----------
-    def control_loop(self):
+    def control_loop(self) -> None:
         cmd = Twist()
         if self.done:
             self.cmd_pub.publish(cmd)
@@ -363,7 +382,7 @@ class FrontierExplorer(Node):
             self.stuck_since = None
 
 
-def main(args=None):
+def main(args: list[str] | None = None) -> None:
     rclpy.init(args=args)
     node = FrontierExplorer()
     try:
